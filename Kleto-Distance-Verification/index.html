@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kleto Snack - Verificación de Delivery</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background-image: url('logo.png');
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      font-family: Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      z-index: 0;
+    }
+
+    .card {
+      position: relative;
+      z-index: 1;
+      background: rgba(20,20,20,0.92);
+      color: white;
+      padding: 30px;
+      border-radius: 16px;
+      max-width: 380px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+
+    h1 {
+      margin-top: 0;
+    }
+
+    button {
+      padding: 14px 20px;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 15px;
+      width: 100%;
+    }
+
+    .btn-check {
+      background: #ff9800;
+      color: black;
+      font-weight: bold;
+    }
+
+    .btn-wa {
+      background: #25D366;
+      color: black;
+      font-weight: bold;
+      display: none;
+    }
+
+    .status {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 8px;
+      display: none;
+      font-weight: bold;
+    }
+
+    .inside {
+      background: #ff9800;
+      color: black;
+    }
+
+    .outside {
+      background: #d32f2f;
+      color: white;
+    }
+
+    .legal {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<div class="card">
+  <h1>Verificación de Delivery</h1>
+  <p>Presiona el botón para comprobar si estás dentro del área de 500 metros.</p>
+
+  <button class="btn-check" onclick="checkLocation()">Verificar ubicación</button>
+
+  <div id="statusBox" class="status"></div>
+
+  <button id="waBtn" class="btn-wa" onclick="openWhatsApp()">Enviar resultado por WhatsApp</button>
+
+  <div class="legal">
+    Al continuar aceptas que tu ubicación sea usada con fines analíticos y de control interno del servicio.
+  </div>
+</div>
+
+<script>
+const BUSINESS_LAT = 19.78207;
+const BUSINESS_LON = -70.69165;
+const MAX_DISTANCE = 500;
+const WHATSAPP_NUMBER = "18495939991";
+
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbz9KiUc-gOmKDYBRibR299XJVE4qfLj0-OHCjRtD211eF9-9Ky_v1jciBC1qayq1D0LAw/exec";
+
+let lastResult = "";
+let lastDistance = 0;
+let lastLat = 0;
+let lastLon = 0;
+
+function toRad(value) {
+  return value * Math.PI / 180;
+}
+
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function checkLocation() {
+  if (!navigator.geolocation) {
+    alert("Tu dispositivo no soporta GPS.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(success, error, {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 0
+  });
+}
+
+function success(position) {
+  const lat = position.coords.latitude;
+  const lon = position.coords.longitude;
+
+  lastLat = lat;
+  lastLon = lon;
+
+  const distance = calculateDistance(lat, lon, BUSINESS_LAT, BUSINESS_LON);
+  lastDistance = Math.round(distance);
+
+  const statusBox = document.getElementById("statusBox");
+  const waBtn = document.getElementById("waBtn");
+
+  statusBox.style.display = "block";
+  waBtn.style.display = "block";
+
+  let statusText = "";
+  let statusClass = "";
+
+  if (distance <= MAX_DISTANCE) {
+    statusText = "ESTÁS DENTRO DEL ÁREA DE DELIVERY GRATIS";
+    statusClass = "inside";
+    lastResult = "DENTRO";
+  } else {
+    statusText = "ESTÁS FUERA DEL ÁREA DE DELIVERY GRATIS";
+    statusClass = "outside";
+    lastResult = "FUERA";
+  }
+
+  statusBox.className = "status " + statusClass;
+  statusBox.innerText = `${statusText}\nDistancia: ${lastDistance} metros`;
+
+  sendToSheets();
+}
+
+function error(err) {
+  alert("No se pudo obtener tu ubicación. Activa GPS y permisos del navegador.");
+}
+
+function openWhatsApp() {
+  const message = `Resultado verificación Kleto Snack:
+Estado: ${lastResult}
+Distancia: ${lastDistance} metros
+Ubicación: https://maps.google.com/?q=${lastLat},${lastLon}`;
+
+  const url = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank");
+}
+
+function sendToSheets() {
+  const data = new URLSearchParams();
+  data.append("Latitude", lastLat);
+  data.append("Longitude", lastLon);
+  data.append("Distance", lastDistance);
+  data.append("Status", lastResult);
+  data.append("Device", navigator.userAgent);
+  data.append("Consent", "Accepted");
+
+  fetch(GOOGLE_SCRIPT_URL, {
+    method: "POST",
+    body: data
+  });
+}
+</script>
+
+</body>
+</html>
